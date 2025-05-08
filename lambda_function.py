@@ -1,4 +1,4 @@
-#Imports for the helper
+""" IMPORTS """
 import boto3
 import json
 import os
@@ -10,12 +10,19 @@ from botocore.exceptions import ClientError
 from datetime import datetime, timedelta
 from datetime import datetime
 
+""" GLOABAL VARIABLES """
+ARN_SQS     = os.environ.get("SQS_QUEUE_ARN")
+REGION      = os.environ.get('REGION')#"ap-southeast-1"
 
-""" START: ALL THE HELPER CLASSES """
 
-""" 
-1. AWS Response Class
-"""
+SUCCESS     = "🟢"  # Green dot
+FAIL        = "🟡"  # yellow dot
+ERROR       = "🔴"  # Warning sign
+
+
+""" HELPER CLASSES """
+
+"""  1. AWS RESPONSE MANAGER """
 
 #a. AWS Resource Data - To ensure the data format is strictly governed
 @dataclass
@@ -139,9 +146,7 @@ class AWSResponse:
     def data(self) -> Dict[str, Any]:
         return {k: v for k, v in self._raw_response.items() if k != 'ResponseMetadata'}
 
-""" 
-2. AWSResourceManager 
-"""
+""" 2. RESOURCE MANAGER """
 
 #This is the main class where All the Data Fetching happens
 class AWSResourceManager:
@@ -683,9 +688,7 @@ class AWSResourceManager:
                 self.set_log(def_type="security", status="Fail",value={'security_findings':str(e)})
                 return None
 
-""" 
-3. AWS SQS Manager
-"""
+""" 3. SQS MANAGER """
 class SQSManager:
     def __init__(self, queue_arn: str):
         """
@@ -875,9 +878,7 @@ class SQSManager:
                 print(f"Error purging queue: {e}")
             return False
 
-""" 
-4. AWS Test Services
-"""
+""" 4. TEST AWS SERVICES """
 class TestAwsServices:
     def __init__(self, params=None):
         # Get current date and 30 days ago for CE
@@ -976,37 +977,6 @@ class TestAwsServices:
                                                         }
                     }
 
-        self.obs360_services    = {
-                                    'sts'                : {
-                                                            'name'      : 'STS',
-                                                            'client'    : boto3.client('sts'), 
-                                                            'action'    : 'get_caller_identity', 
-                                                            'params'    : params,
-                                                            'status'    : False,
-                                                        },
-                                    'account'            : {    
-                                                            'name'      : 'Account',
-                                                            'client'    : boto3.client('account'), 
-                                                            'action'    : 'get_contact_information', 
-                                                            'params'    : params,
-                                                            'status'    : False
-                                                        },
-                                    'sqs'                : {
-                                                            'name'      : 'SQS',
-                                                            'client'    : boto3.client('sqs', region_name=REGION), 
-                                                            'action'    : 'list_queues', 
-                                                            'params'    : params,
-                                                            'status'    : False
-                                                        },
-                                    'rds-data'           : {
-                                                            'name'      : 'Aurora RDS', 
-                                                            'client'    : boto3.client('rds-data'),
-                                                            'action'    : 'close',  
-                                                            'params'    : params
-                                                        }
-                                 }
-
-
     def _run_test(self, service):
         try:
             if service['params']:
@@ -1048,42 +1018,7 @@ class TestAwsServices:
         else:
             return True
 
-    def test_obs_360_connection(self):
-        print("Testing Database and Other connections")
-        print("*"*40)
-
-        passed  = 0
-        failed  = 0
-        counter = 0
-
-        for key, val in self.obs360_services.items():
-            self._run_test(val)
-            
-            if val['status'] == True:
-                passed += 1
-            elif val['status'] == False:
-                failed += 1
-
-            counter += 1
-        
-        error = counter - (passed + failed)
-
-        print(f"\n\033[92m{passed} Connected\033[0m \n\033[93m{failed} Not Connected\033[0m \n\033[91m{error} Has Errors\033[0m\n")
-
-        if(failed > 0):
-            return False
-        else:
-            return True
-
-""" END OF ALL THE HELPER CLASSES """
-ARN_SQS     = os.environ.get("SQS_QUEUE_ARN")
-REGION      = os.environ.get('REGION')#"ap-southeast-1"
-
-
-SUCCESS     = "🟢"  # Green dot
-FAIL        = "🟡"  # yellow dot
-ERROR       = "🔴"  # Warning sign
-
+""" 5. METHODS FOR LAMBDA """
 def test_connection():
     check = TestAwsServices()
     return check.test_aws_clients()  
@@ -1137,6 +1072,6 @@ def lambda_handler(event=None, context=None):
     else:
         print("Couldn't load Any Data")
 
-
-""" if __name__ == "__main__":
-    lambda_handler() """
+# Uncomment the line below for development only
+#if __name__ == "__main__":
+#    lambda_handler()
