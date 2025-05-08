@@ -1138,5 +1138,5 @@ def lambda_handler(event=None, context=None):
         print("Couldn't load Any Data")
 
 
-if __name__ == "__main__":
-    lambda_handler()
+""" if __name__ == "__main__":
+    lambda_handler() """
