@@ -1076,9 +1076,6 @@ class TestAwsServices:
             return True
 
 """ END OF ALL THE HELPER CLASSES """
-
-os.environ['SQS_QUEUE_ARN']         = str('arn:aws:sqs:ap-southeast-1:615299736125:obs360-sqs')
-os.environ['REGION']                = str('ap-southeast-1')
 ARN_SQS     = os.environ.get("SQS_QUEUE_ARN")
 REGION      = os.environ.get('REGION')#"ap-southeast-1"
 
