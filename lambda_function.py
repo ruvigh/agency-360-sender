@@ -151,8 +151,6 @@ class AWSResponse:
         return {k: v for k, v in self._raw_response.items() if k != 'ResponseMetadata'}
 
 """ 2. RESOURCE MANAGER """
-
-#This is the main class where All the Data Fetching happens
 class AWSResourceManager:
     def __init__(self, account_id, account=None, start_date=None, end_date=None, interval="DAILY", region="ap-southeast-1"):
         self.data           = AWSResourceInterface()
@@ -204,9 +202,6 @@ class AWSResourceManager:
         
 
         return True
-        
-    
-    
     
     def set_log(self, def_type, status="Pass", value=None):
         self.log[def_type] = status
@@ -230,7 +225,7 @@ class AWSResourceManager:
         #Get comprehensive account details using AWS Account client
         try:
             account_client  = boto3.client('account')
-            org_client      = boto3.client('organizations')
+            #org_client      = boto3.client('organizations')
             
             result          = {
                                 'account_id'        : None,     
@@ -246,14 +241,15 @@ class AWSResourceManager:
 
             #Get Basic Information
             try:
-                account_info                = AWSResponse(org_client.describe_account(AccountId=self.account_id))
+                #account_info                = account_client.get_account_information()
+                
                 result['account_id']        = self.account_id
-                result['account_name']      = account_info.data['Account'].get('Name')
-                result['account_email']     = account_info.data['Account'].get('Email')
-                result['account_status']    = account_info.data['Account'].get('Status')
-                result['account_arn']       = account_info.data['Account'].get('Arn')
-                result['joined_method']     = account_info.data['Account'].get('JoinedMethod')
-                result['joined_timestamp']  = str(account_info.data['Account'].get('JoinedTimestamp'))
+                result['account_name']      = None#account_info['AccountName'] #this can be updated when the Boto package in lambda is at 1.38 currently it is 1.35
+                result['account_email']     = None
+                result['account_status']    = "ACTIVE"
+                result['account_arn']       = None
+                result['joined_method']     = None
+                result['joined_timestamp']  = None#str(account_info['AccountCreatedDate']) #this can be updated when the Boto package in lambda is at 1.38 currently it is 1.35
                                                   
             except Exception as e:
                 print(f"Error getting basic account info: {str(e)}")
@@ -903,13 +899,6 @@ class TestAwsServices:
                                                             'params'    : params,
                                                             'status'    : False
                                                         },
-                                    'organizations'      : { 
-                                                            'name'      : 'Organizations',
-                                                            'client'    : boto3.client('organizations'), 
-                                                            'action'    : 'list_accounts', 
-                                                            'params'    : params,
-                                                            'status'    : False
-                                                        },
                                     'ce'                 : { 
                                                             'name'      : 'Cost Explorer',
                                                             'client'    : boto3.client('ce'), 
@@ -1055,6 +1044,7 @@ def load_data(interval="DAILY", end_date=None):
     return send_result
 
 def lambda_handler(event=None, context=None):
+    
     if(test_connection()):
         print(f"{FAIL} Start: Data to SQS")
         daily_data = load_data(interval="DAILY")
