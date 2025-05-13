@@ -1049,13 +1049,13 @@ def lambda_handler(event=None, context=None):
         print(f"{FAIL} Start: Data to SQS")
         daily_data = load_data(interval="DAILY")
 
-        if(daily_data['ResponseMetadata']['HTTPStatusCode'] == 200):
+        if(daily_data and daily_data != None and daily_data['ResponseMetadata']['HTTPStatusCode'] == 200):
 
             print(f"{SUCCESS} Loaded Daily Data: {daily_data['MessageId']}")
 
             monthly_data = load_data(interval="MONTHLY")
             
-            if(monthly_data['ResponseMetadata']['HTTPStatusCode'] == 200):
+            if(monthly_data and monthly_data != None and monthly_data['ResponseMetadata']['HTTPStatusCode'] == 200):
                 print(f"{SUCCESS} Loaded Monthly Data: {monthly_data['MessageId']}")
 
                 print(f"{SUCCESS} Finish: Data to SQS")
