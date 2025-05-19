@@ -1016,6 +1016,30 @@ def test_connection():
     check = TestAwsServices()
     return check.test_aws_clients()  
 
+def fetch_data(interval="DAILY", end_date=None):
+    sts_client      = boto3.client('sts')
+    identity        = AWSResponse(sts_client.get_caller_identity())
+    account         = identity.data['Account']
+    sqs             = SQSManager(queue_arn=ARN_SQS)
+    end_date        = end_date
+    start_date      = None
+    
+    interval        = interval
+    aws             = AWSResourceManager(account_id=account, interval=interval, start_date=start_date, end_date=end_date)
+
+    #1. Fetch Account Data
+    account_data    = aws.get_account_details()
+    #2. Fetch Services Data
+    services_data   = aws.get_services()
+    #3. Fetch Cost Data
+    cost_data       = aws.get_cost()
+    #4. Fetch security Data
+    security_data   = aws.get_security()
+    #5. Get All Data
+    data            = aws.data.get_all_data()
+
+    return data
+
 def load_data(interval="DAILY", end_date=None):
     sts_client      = boto3.client('sts')
     identity        = AWSResponse(sts_client.get_caller_identity())
