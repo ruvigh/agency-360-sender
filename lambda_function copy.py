@@ -13,10 +13,13 @@ from typing import Dict, List, Optional, Union, Any
 from botocore.exceptions import ClientError
 from datetime import datetime, timedelta
 from datetime import datetime
+from calendar import monthrange
+
 
 """ GLOABAL VARIABLES """
 ARN_SQS     = os.environ.get("SQS_QUEUE_ARN")
 REGION      = os.environ.get('REGION')#"ap-southeast-1"
+BUCKET      = os.environ.get('ANALYTICS_BUCKET')#"ap-southeast-1"
 
 
 SUCCESS     = "🟢"  # Green dot
@@ -1016,8 +1019,35 @@ def test_connection():
     check = TestAwsServices()
     return check.test_aws_clients()  
 
+def upload_to_s3(account, data, interval, end_date):
+    end_date    = datetime.now() if not end_date else end_date
+    s3          = boto3.client('s3')
+    timestamp   = end_date.strftime("%H%M%S")
+    filename    = f'data/{account}/{interval}_{end_date.year}{end_date.month}{end_date.day}{timestamp}.json'
+    
+    try:
+        # Convert data to JSON string
+        json_data = json.dumps(data, indent=4)
+        
+        # Upload to S3
+        s3.put_object(Bucket=BUCKET,Key=filename,Body=json_data)
+        
+        #print(f"\n✓ All daily data successfully written to s3://{BUCKET}/{filename}")
+
+        result = {
+            "path"          : f"s3://{BUCKET}/{filename}",
+            "date_added"    : str(end_date.date()),
+            "account"       : account
+        }
+        return result
+    
+    except Exception as e:
+        print(f"\n✗ Error writing to S3: {str(e)}")
+        return None
+
 def get_data(interval="DAILY", start_date=None, end_date=None):
     sts_client      = boto3.client('sts')
+    
     identity        = AWSResponse(sts_client.get_caller_identity())
     account         = identity.data['Account']
     sqs             = SQSManager(queue_arn=ARN_SQS)
@@ -1036,9 +1066,51 @@ def get_data(interval="DAILY", start_date=None, end_date=None):
     #4. Fetch security Data
     aws.get_security()
     #5. Get All Data
-    data            = aws.data.get_all_data()
+    data        = aws.data.get_all_data() 
+    result      = upload_to_s3(data=data, account=account, end_date=end_date, interval=interval)
 
-    return data
+    return result
+
+def load_current_data(interval="DAILY", end_date=None):
+    
+    sqs         = SQSManager(queue_arn=ARN_SQS)
+    data        = get_data(interval=interval)
+    
+    send_result = sqs.send_message(message=data)
+
+    #print(send_result)
+
+    return send_result
+
+#Load current year's historical data
+def load_historical_data():
+    sqs         = SQSManager(queue_arn=ARN_SQS)
+    till_date   = datetime.now()
+    start_date  = datetime(till_date.year, 1, 1)  # January 1st of current year
+    interval    = "DAILY"
+    
+    print(f"Will process daily data from {start_date.strftime('%d-%m-%Y')} to {till_date.strftime('%d-%m-%Y')}")
+
+    current     = start_date
+
+    while current <= till_date:
+        formatted_date = current.strftime('%d-%m-%Y')
+        #print(f"Processing data for: {formatted_date}")
+        try:
+           
+            last_day_of_month   = monthrange(current.year, current.month)[1]
+            is_last_day         = current.day == last_day_of_month
+            interval            = "MONTHLY" if(is_last_day) else "DAILY"
+            data                = get_data(interval=interval, end_date=current)
+            send_result         = sqs.send_message(message=data)
+            print(send_result)            
+        except Exception as e:
+            print(f"✗ Error processing data for {formatted_date}: {str(e)}")
+            continue
+        
+        finally:
+            # Move to next day
+            current += timedelta(days=1)
 
 def load_data(interval="DAILY", end_date=None):
     sts_client      = boto3.client('sts')
@@ -1091,5 +1163,7 @@ def lambda_handler(event=None, context=None):
         print("Couldn't load Any Data")
 
 # Uncomment the line below for development only
-#if __name__ == "__main__":
-#    lambda_handler()
+if __name__ == "__main__":
+    load_historical_data()
+    #load_current_data()
+    #lambda_handler()
