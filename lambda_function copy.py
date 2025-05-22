@@ -1100,10 +1100,12 @@ def load_historical_data():
             last_day_of_month   = monthrange(current.year, current.month)[1]
             is_last_day         = current.day == last_day_of_month
             interval            = "MONTHLY" if(is_last_day) else "DAILY"
+
             if(is_last_day):
                 data                = get_data(interval="DAILY", end_date=current)
                 send_result         = sqs.send_message(message=data)
-                print(f"{SUCCESS} {interval} : {formatted_date} Loaded - {send_result['MessageId']}")
+                print(f"{SUCCESS} DAILY : {formatted_date} Loaded - {send_result['MessageId']}")
+
             data                = get_data(interval=interval, end_date=current)
             send_result         = sqs.send_message(message=data)
             

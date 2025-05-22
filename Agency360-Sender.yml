@@ -7,33 +7,33 @@ Parameters:
     Default: ap-southeast-1
     Description: AWS Region for the Lambda function
     
-  SqsQueueArn:
-    Type: String
-    Default: arn:aws:sqs:<REGION_NAME>:<ANALYTICS_ACCOUNT_ID>:obs360-sqs
-    Description: ARN of the SQS queue to monitor
-    
   AnalyticsAccount:
     Type: String
-    Default: '<ANALYTICS_ACCOUNT_ID>'
+    Default: 'ANALYTICS_ACCOUNT_ID'
     Description: Analytics Account ID
+    
+  S3Bucket:
+    Type: String
+    Default: 'agency360-data'
+    Description: S3 bucket for storing data
 
 Resources:
   SQSMetricsLambdaFunction:
     Type: 'AWS::Lambda::Function'
     Properties:
-      FunctionName: obs360-sqs-metrics-daily
+      FunctionName: agency360-sqs-metrics-daily
       Handler: index.lambda_handler
       Role: 
         Fn::GetAtt: 
           - LambdaExecutionRole
           - Arn
+      Environment:
+        Variables:
+          REGION: !Ref Region
+          SQS_QUEUE_ARN: !Sub 'arn:aws:sqs:${Region}:${AnalyticsAccount}:agency360-sqs'
+          BUCKET: !Ref S3Bucket
       Code:
         ZipFile: |
-          #!/usr/bin/env python
-          # -*- coding: utf-8 -*-
-          """
-          File: index.py
-          """
           """ IMPORTS """
           import boto3
           import json
@@ -45,10 +45,13 @@ Resources:
           from botocore.exceptions import ClientError
           from datetime import datetime, timedelta
           from datetime import datetime
+          from calendar import monthrange
+
 
           """ GLOABAL VARIABLES """
           ARN_SQS     = os.environ.get("SQS_QUEUE_ARN")
           REGION      = os.environ.get('REGION')#"ap-southeast-1"
+          BUCKET      = os.environ.get('ANALYTICS_BUCKET')#"ap-southeast-1"
 
 
           SUCCESS     = "🟢"  # Green dot
@@ -327,7 +330,7 @@ Resources:
                       return result
 
                   except Exception as e:
-                      print(f"Error in get_account_details: {str(e)}")
+                      #print(f"Error in get_account_details: {str(e)}")
                       # Updating Log
                       self.set_log(def_type="account", status="Fail",value={'account':str(e)})
                       
@@ -427,7 +430,7 @@ Resources:
                           return result_data
                   
                       except Exception as e:
-                          print(f"Error fetching services data: {str(e)}")
+                          #print(f"Error fetching services data: {str(e)}")
                           # Updating Log
                           self.set_log(def_type="service", status="Fail",value={'services_data':str(e)})
                           return None
@@ -550,8 +553,8 @@ Resources:
                                                           })
                                   
                               except Exception as e:
-                                  print(f"Error getting forecast: {str(e)}")
-                                  self.set_log(def_type="cost", status="Pass",value={'forecast_cost':str(e)})
+                                  #print(f"Error Fetching Cost Forecast data: {str(e)}")
+                                  self.set_log(def_type="cost", status="Fail",value={'forecast_cost':str(e)})
                                   forecast_data = []
                                   
 
@@ -597,7 +600,7 @@ Resources:
                   if(self.get_date()):
                       try:
                           #1. Initialize
-                          securityhub = boto3.client('securityhub')
+                          securityhub = boto3.client('securityhub', region_name=REGION)
                       
                           #2. API To fetch Services Data from Security Hub
                           service_findings    = {}
@@ -953,21 +956,21 @@ Resources:
                                                                   },
                                               'securityhub'        : {
                                                                       'name'      : 'Security Hub',
-                                                                      'client'    : boto3.client('securityhub'), 
+                                                                      'client'    : boto3.client('securityhub', region_name=REGION), 
                                                                       'action'    : 'describe_hub', 
                                                                       'params'    : params,
                                                                       'status'    : False
                                                                   },
                                               'resiliencehub'      : {
                                                                       'name'      : 'Resilience Hub',
-                                                                      'client'    : boto3.client('resiliencehub'), 
+                                                                      'client'    : boto3.client('resiliencehub', region_name=REGION), 
                                                                       'action'    : 'list_apps', 
                                                                       'params'    : params,
                                                                       'status'    : False
                                                                   },
                                               'config'             : {
                                                                       'name'      : 'AWS Config',
-                                                                      'client'    : boto3.client('config'),
+                                                                      'client'    : boto3.client('config', region_name=REGION),
                                                                       'action'    : 'describe_configuration_recorders', 
                                                                       'params'    : params,
                                                                       'status'    : False
@@ -988,7 +991,7 @@ Resources:
                                                                   }, """
                                               'application-signals': {   
                                                                       'name'      : 'Application Signals',
-                                                                      'client'    : boto3.client('application-signals'), 
+                                                                      'client'    : boto3.client('application-signals', region_name=REGION), 
                                                                       'action'    : 'close', 
                                                                       'params'    : params,
                                                                       'status'    : False
@@ -1048,8 +1051,35 @@ Resources:
               check = TestAwsServices()
               return check.test_aws_clients()  
 
-          def load_data(interval="DAILY", end_date=None):
+          def upload_to_s3(account, data, interval, end_date):
+              end_date    = datetime.now() if not end_date else end_date
+              s3          = boto3.client('s3')
+              timestamp   = end_date.strftime("%H%M%S")
+              filename    = f'data/{account}/{end_date.year}_{end_date.month}_{end_date.day}_{timestamp}_{interval}_.json'
+              
+              try:
+                  # Convert data to JSON string
+                  json_data = json.dumps(data, indent=4)
+                  
+                  # Upload to S3
+                  s3.put_object(Bucket=BUCKET,Key=filename,Body=json_data)
+                  
+                  #print(f"\n✓ All daily data successfully written to s3://{BUCKET}/{filename}")
+
+                  result = {
+                      "path"          : f"s3://{BUCKET}/{filename}",
+                      "date_added"    : str(end_date.date()),
+                      "account"       : account
+                  }
+                  return result
+              
+              except Exception as e:
+                  print(f"\n✗ Error writing to S3: {str(e)}")
+                  return None
+
+          def get_data(interval="DAILY", start_date=None, end_date=None):
               sts_client      = boto3.client('sts')
+              
               identity        = AWSResponse(sts_client.get_caller_identity())
               account         = identity.data['Account']
               sqs             = SQSManager(queue_arn=ARN_SQS)
@@ -1060,43 +1090,99 @@ Resources:
               aws             = AWSResourceManager(account_id=account, interval=interval, start_date=start_date, end_date=end_date)
 
               #1. Fetch Account Data
-              account_data    = aws.get_account_details()
+              aws.get_account_details()
               #2. Fetch Services Data
-              services_data   = aws.get_services()
+              aws.get_services()
               #3. Fetch Cost Data
-              cost_data       = aws.get_cost()
+              aws.get_cost()
               #4. Fetch security Data
-              security_data   = aws.get_security()
-              #5. Load it to SQS Queue
-              send_result     = sqs.send_message(message=aws.data.get_all_data())
+              aws.get_security()
+              #5. Get All Data
+              data        = aws.data.get_all_data() 
+              result      = upload_to_s3(data=data, account=account, end_date=end_date, interval=interval)
+
+              return result
+
+          #Load Daily Data
+          def load_current_data(interval="DAILY", end_date=None):
               
-              # TESTING ONLY
-              #print(f"{SUCCESS} Send result: {send_result}")
+              sqs         = SQSManager(queue_arn=ARN_SQS)
+              data        = get_data(interval=interval)
+              
+              send_result = sqs.send_message(message=data)
 
               return send_result
 
+          #Load current year's historical data
+          def load_historical_data():
+              sqs         = SQSManager(queue_arn=ARN_SQS)
+              till_date   = datetime.now()
+              start_date  = datetime(till_date.year, 1, 1)  # January 1st of current year
+              interval    = "DAILY"
+              
+              print(f"Will process daily data from {start_date.strftime('%d-%m-%Y')} to {till_date.strftime('%d-%m-%Y')}")
+
+              current     = start_date
+
+              while current <= till_date:
+                  formatted_date = current.strftime('%d-%m-%Y')
+                  #print(f"Processing data for: {formatted_date}")
+                  try:
+                    
+                      last_day_of_month   = monthrange(current.year, current.month)[1]
+                      is_last_day         = current.day == last_day_of_month
+                      interval            = "MONTHLY" if(is_last_day) else "DAILY"
+
+                      if(is_last_day):
+                          data                = get_data(interval="DAILY", end_date=current)
+                          send_result         = sqs.send_message(message=data)
+                          print(f"{SUCCESS} DAILY : {formatted_date} Loaded - {send_result['MessageId']}")
+
+                      data                = get_data(interval=interval, end_date=current)
+                      send_result         = sqs.send_message(message=data)
+                      
+                      print(f"{SUCCESS} {interval} : {formatted_date} Loaded - {send_result['MessageId']}")
+                  except Exception as e:
+                      print(f"{ERROR} {interval} : {formatted_date} Not Loaded - {str(e)}")
+                      continue
+                  
+                  finally:
+                      # Move to next day
+                      current += timedelta(days=1)
+
           def lambda_handler(event=None, context=None):
               
+              has_daily   = False
+              has_monthly = False
+              has_history = False
+
               if(test_connection()):
-                  print(f"{FAIL} Start: Data to SQS")
-                  daily_data = load_data(interval="DAILY")
-
-                  if(daily_data and daily_data != None and daily_data['ResponseMetadata']['HTTPStatusCode'] == 200):
-
-                      print(f"{SUCCESS} Loaded Daily Data: {daily_data['MessageId']}")
-
-                      monthly_data = load_data(interval="MONTHLY")
-                      
-                      if(monthly_data and monthly_data != None and monthly_data['ResponseMetadata']['HTTPStatusCode'] == 200):
-                          print(f"{SUCCESS} Loaded Monthly Data: {monthly_data['MessageId']}")
-
-                          print(f"{SUCCESS} Finish: Data to SQS")
-                      else:
-                          print("Couldn't load Monthly Data")         
+                  print("*"*15,"Connected","*"*15)
+                  if (event is not None and isinstance(event, dict) and "history" in event and event['history'] == True):
+                      print("Loading Historical Data")
+                      load_historical_data()
+                      has_history = True
+                      print(f"{SUCCESS if(has_history) else ERROR} History Data")
                   else:
-                      print("Couldn't load Daily Data")    
-              else:
-                  print("Couldn't load Any Data")
+                      print("Loading Daily & Monthly Data")
+                      daily_data = load_current_data(interval="DAILY")
+
+                      if(daily_data and daily_data != None and daily_data['ResponseMetadata']['HTTPStatusCode'] == 200):
+                          has_daily = True
+                          monthly_data = load_current_data(interval="MONTHLY")
+                          
+                          if(monthly_data and monthly_data != None and monthly_data['ResponseMetadata']['HTTPStatusCode'] == 200):
+                              has_monthly = True
+                      
+                      print(f"{SUCCESS if(has_daily) else ERROR} Daily Data - {daily_data['MessageId']}")
+                      print(f"{SUCCESS if(has_monthly) else ERROR} Monthly Data - {monthly_data['MessageId']}")
+              
+                  print("*"*14,"Disconnected","*"*13)
+
+          # Uncomment the line below for development only
+          #if __name__ == "__main__":
+          #    lambda_handler(event={'history':True})
+          #    #load_current_data()
 
       Runtime: python3.10
       Timeout: 60
@@ -1109,11 +1195,13 @@ Resources:
             Ref: SqsQueueArn
           ANALYTICS_ACCT: 
             Ref: AnalyticsAccount
+          BUCKET:
+            Ref: S3Bucket
 
   LambdaExecutionRole:
     Type: 'AWS::IAM::Role'
     Properties:
-      RoleName: obs360-all-account-service-role
+      RoleName: agency360-all-account-service-role
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
