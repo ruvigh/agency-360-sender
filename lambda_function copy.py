@@ -298,7 +298,7 @@ class AWSResourceManager:
             return result
 
         except Exception as e:
-            print(f"Error in get_account_details: {str(e)}")
+            #print(f"Error in get_account_details: {str(e)}")
             # Updating Log
             self.set_log(def_type="account", status="Fail",value={'account':str(e)})
             
@@ -398,7 +398,7 @@ class AWSResourceManager:
                 return result_data
         
             except Exception as e:
-                print(f"Error fetching services data: {str(e)}")
+                #print(f"Error fetching services data: {str(e)}")
                 # Updating Log
                 self.set_log(def_type="service", status="Fail",value={'services_data':str(e)})
                 return None
@@ -521,8 +521,8 @@ class AWSResourceManager:
                                                 })
                         
                     except Exception as e:
-                        print(f"Error getting forecast: {str(e)}")
-                        self.set_log(def_type="cost", status="Pass",value={'forecast_cost':str(e)})
+                        #print(f"Error Fetching Cost Forecast data: {str(e)}")
+                        self.set_log(def_type="cost", status="Fail",value={'forecast_cost':str(e)})
                         forecast_data = []
                         
 
@@ -924,21 +924,21 @@ class TestAwsServices:
                                                         },
                                     'securityhub'        : {
                                                             'name'      : 'Security Hub',
-                                                            'client'    : boto3.client('securityhub'), 
+                                                            'client'    : boto3.client('securityhub', region_name=REGION), 
                                                             'action'    : 'describe_hub', 
                                                             'params'    : params,
                                                             'status'    : False
                                                         },
                                     'resiliencehub'      : {
                                                             'name'      : 'Resilience Hub',
-                                                            'client'    : boto3.client('resiliencehub'), 
+                                                            'client'    : boto3.client('resiliencehub', region_name=REGION), 
                                                             'action'    : 'list_apps', 
                                                             'params'    : params,
                                                             'status'    : False
                                                         },
                                     'config'             : {
                                                             'name'      : 'AWS Config',
-                                                            'client'    : boto3.client('config'),
+                                                            'client'    : boto3.client('config', region_name=REGION),
                                                             'action'    : 'describe_configuration_recorders', 
                                                             'params'    : params,
                                                             'status'    : False
@@ -959,7 +959,7 @@ class TestAwsServices:
                                                         }, """
                                     'application-signals': {   
                                                             'name'      : 'Application Signals',
-                                                            'client'    : boto3.client('application-signals'), 
+                                                            'client'    : boto3.client('application-signals', region_name=REGION), 
                                                             'action'    : 'close', 
                                                             'params'    : params,
                                                             'status'    : False
@@ -1023,7 +1023,7 @@ def upload_to_s3(account, data, interval, end_date):
     end_date    = datetime.now() if not end_date else end_date
     s3          = boto3.client('s3')
     timestamp   = end_date.strftime("%H%M%S")
-    filename    = f'data/{account}/{interval}_{end_date.year}{end_date.month}{end_date.day}{timestamp}.json'
+    filename    = f'data/{account}/{end_date.year}_{end_date.month}_{end_date.day}_{timestamp}_{interval}_.json'
     
     try:
         # Convert data to JSON string
@@ -1071,14 +1071,13 @@ def get_data(interval="DAILY", start_date=None, end_date=None):
 
     return result
 
+#Load Daily Data
 def load_current_data(interval="DAILY", end_date=None):
     
     sqs         = SQSManager(queue_arn=ARN_SQS)
     data        = get_data(interval=interval)
     
     send_result = sqs.send_message(message=data)
-
-    #print(send_result)
 
     return send_result
 
@@ -1101,69 +1100,53 @@ def load_historical_data():
             last_day_of_month   = monthrange(current.year, current.month)[1]
             is_last_day         = current.day == last_day_of_month
             interval            = "MONTHLY" if(is_last_day) else "DAILY"
+            if(is_last_day):
+                data                = get_data(interval="DAILY", end_date=current)
+                send_result         = sqs.send_message(message=data)
+                print(f"{SUCCESS} {interval} : {formatted_date} Loaded - {send_result['MessageId']}")
             data                = get_data(interval=interval, end_date=current)
             send_result         = sqs.send_message(message=data)
-            print(send_result)            
+            
+            print(f"{SUCCESS} {interval} : {formatted_date} Loaded - {send_result['MessageId']}")
         except Exception as e:
-            print(f"✗ Error processing data for {formatted_date}: {str(e)}")
+            print(f"{ERROR} {interval} : {formatted_date} Not Loaded - {str(e)}")
             continue
         
         finally:
             # Move to next day
             current += timedelta(days=1)
 
-def load_data(interval="DAILY", end_date=None):
-    sts_client      = boto3.client('sts')
-    identity        = AWSResponse(sts_client.get_caller_identity())
-    account         = identity.data['Account']
-    sqs             = SQSManager(queue_arn=ARN_SQS)
-    end_date        = end_date
-    start_date      = None
-    
-    interval        = interval
-    aws             = AWSResourceManager(account_id=account, interval=interval, start_date=start_date, end_date=end_date)
-
-    #1. Fetch Account Data
-    account_data    = aws.get_account_details()
-    #2. Fetch Services Data
-    services_data   = aws.get_services()
-    #3. Fetch Cost Data
-    cost_data       = aws.get_cost()
-    #4. Fetch security Data
-    security_data   = aws.get_security()
-    #5. Load it to SQS Queue
-    send_result     = sqs.send_message(message=aws.data.get_all_data())
-    
-    # TESTING ONLY
-    #print(f"{SUCCESS} Send result: {send_result}")
-
-    return send_result
-
 def lambda_handler(event=None, context=None):
     
+    has_daily   = False
+    has_monthly = False
+    has_history = False
+
     if(test_connection()):
-        print(f"{FAIL} Start: Data to SQS")
-        daily_data = load_data(interval="DAILY")
-
-        if(daily_data and daily_data != None and daily_data['ResponseMetadata']['HTTPStatusCode'] == 200):
-
-            print(f"{SUCCESS} Loaded Daily Data: {daily_data['MessageId']}")
-
-            monthly_data = load_data(interval="MONTHLY")
-            
-            if(monthly_data and monthly_data != None and monthly_data['ResponseMetadata']['HTTPStatusCode'] == 200):
-                print(f"{SUCCESS} Loaded Monthly Data: {monthly_data['MessageId']}")
-
-                print(f"{SUCCESS} Finish: Data to SQS")
-            else:
-                print("Couldn't load Monthly Data")         
+        print("*"*15,"Connected","*"*15)
+        if (event is not None and isinstance(event, dict) and "history" in event and event['history'] == True):
+            print("Loading Historical Data")
+            load_historical_data()
+            has_history = True
+            print(f"{SUCCESS if(has_history) else ERROR} History Data")
         else:
-            print("Couldn't load Daily Data")    
-    else:
-        print("Couldn't load Any Data")
+            print("Loading Daily & Monthly Data")
+            daily_data = load_current_data(interval="DAILY")
+
+            if(daily_data and daily_data != None and daily_data['ResponseMetadata']['HTTPStatusCode'] == 200):
+                has_daily = True
+                monthly_data = load_current_data(interval="MONTHLY")
+                
+                if(monthly_data and monthly_data != None and monthly_data['ResponseMetadata']['HTTPStatusCode'] == 200):
+                    has_monthly = True
+            
+            print(f"{SUCCESS if(has_daily) else ERROR} Daily Data - {daily_data['MessageId']}")
+            print(f"{SUCCESS if(has_monthly) else ERROR} Monthly Data - {monthly_data['MessageId']}")
+    
+        print("*"*14,"Disconnected","*"*13)
 
 # Uncomment the line below for development only
 if __name__ == "__main__":
-    load_historical_data()
+    
+    lambda_handler(event={'history':True})
     #load_current_data()
-    #lambda_handler()
