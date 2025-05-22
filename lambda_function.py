@@ -19,7 +19,7 @@ from calendar import monthrange
 """ GLOABAL VARIABLES """
 ARN_SQS     = os.environ.get("SQS_QUEUE_ARN")
 REGION      = os.environ.get('REGION')#"ap-southeast-1"
-BUCKET      = os.environ.get('ANALYTICS_BUCKET')#"ap-southeast-1"
+BUCKET      = os.environ.get('BUCKET')#"ap-southeast-1"
 
 
 SUCCESS     = "🟢"  # Green dot
@@ -1076,11 +1076,12 @@ def load_current_data(interval="DAILY", end_date=None):
     
     sqs         = SQSManager(queue_arn=ARN_SQS)
     data        = get_data(interval=interval)
+    if(data is None):
+        return None
+    else:
+        send_result = sqs.send_message(message=data)
+        return send_result
     
-    send_result = sqs.send_message(message=data)
-
-    return send_result
-
 #Load current year's historical data
 def load_historical_data():
     sqs         = SQSManager(queue_arn=ARN_SQS)
@@ -1148,6 +1149,6 @@ def lambda_handler(event=None, context=None):
         print("*"*14,"Disconnected","*"*13)
 
 # Uncomment the line below for development only
-#if __name__ == "__main__":
-#    lambda_handler(event={'history':True})
-#    #load_current_data()
+if __name__ == "__main__":
+    lambda_handler(event={'history':False})
+    #load_current_data()
