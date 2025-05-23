@@ -1147,35 +1147,48 @@ Resources:
                   finally:
                       # Move to next day
                       current += timedelta(days=1)
+              
+              return True
+
+          def process_data_status(has_daily, has_monthly, daily_data, monthly_data):
+            daily_status = f"{SUCCESS if(has_daily) else ERROR} Daily Data - {daily_data['MessageId']}"
+            monthly_status = f"{SUCCESS if(has_monthly) else ERROR} Monthly Data - {monthly_data['MessageId']}"
+            
+            return [daily_status, monthly_status]
 
           def lambda_handler(event=None, context=None):
-              
-              has_daily   = False
-              has_monthly = False
-              has_history = False
+            has_daily     = False
+            has_monthly   = False
+            has_history   = False
+            history_data  = {}
+            status        = []
 
-              if(test_connection()):
-                  print("*"*15,"Connected","*"*15)
-                  if (event is not None and isinstance(event, dict) and "history" in event and event['history'] == True):
-                      print("Loading Historical Data")
-                      load_historical_data()
-                      has_history = True
-                      print(f"{SUCCESS if(has_history) else ERROR} History Data")
-                  else:
-                      print("Loading Daily & Monthly Data")
-                      daily_data = load_current_data(interval="DAILY")
+            if(test_connection()):
+              print("*"*15,"Connected","*"*15)
+              if (event is not None and isinstance(event, dict) and "history" in event and event['history'] == True):
+                  print("Loading Historical Data")
+                  history_data = load_historical_data()
+                  has_history = True
+                  print(f"{SUCCESS if(has_history) else ERROR} History Data")
+              else:
+                  print("Loading Daily & Monthly Data")
+                  daily_data = load_current_data(interval="DAILY")
 
-                      if(daily_data and daily_data != None and daily_data['ResponseMetadata']['HTTPStatusCode'] == 200):
-                          has_daily = True
-                          monthly_data = load_current_data(interval="MONTHLY")
-                          
-                          if(monthly_data and monthly_data != None and monthly_data['ResponseMetadata']['HTTPStatusCode'] == 200):
-                              has_monthly = True
+                  if(daily_data and daily_data != None and daily_data['ResponseMetadata']['HTTPStatusCode'] == 200):
+                      has_daily = True
+                      monthly_data = load_current_data(interval="MONTHLY")
                       
-                      print(f"{SUCCESS if(has_daily) else ERROR} Daily Data - {daily_data['MessageId']}")
-                      print(f"{SUCCESS if(has_monthly) else ERROR} Monthly Data - {monthly_data['MessageId']}")
-              
-                  print("*"*14,"Disconnected","*"*13)
+                      if(monthly_data and monthly_data != None and monthly_data['ResponseMetadata']['HTTPStatusCode'] == 200):
+                          has_monthly = True
+                  
+                  status = process_data_status(has_daily, has_monthly, has_history, daily_data, monthly_data, history_data)
+                  print(status[0])
+                  print(status[1])
+                  print(status[2])
+
+              print("*"*14,"Disconnected","*"*13)
+                
+              return status
 
       Runtime: python3.10
       Timeout: 60

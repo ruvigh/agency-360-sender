@@ -1092,7 +1092,7 @@ def load_historical_data():
     print(f"Will process daily data from {start_date.strftime('%d-%m-%Y')} to {till_date.strftime('%d-%m-%Y')}")
 
     current     = start_date
-
+    count       = 0
     while current <= till_date:
         formatted_date = current.strftime('%d-%m-%Y')
         #print(f"Processing data for: {formatted_date}")
@@ -1118,37 +1118,59 @@ def load_historical_data():
         finally:
             # Move to next day
             current += timedelta(days=1)
+            count += 1
+    
+    return {"from":start_date.strftime('%d-%m-%Y'), "to":till_date.strftime('%d-%m-%Y'), "loaded":count}
+
+def process_data_status(has_daily, has_monthly, has_history, daily_data, monthly_data, history_data):
+    daily_status    = f"{SUCCESS if(has_daily) else ERROR} Daily Data - {daily_data['MessageId']}"
+    monthly_status  = f"{SUCCESS if(has_monthly) else ERROR} Monthly Data - {monthly_data['MessageId']}"
+
+    print(has_history, history_data, not history_data)
+    if(not has_history and len(history_data) == 0):
+        history_status  = f"{FAIL} No Historical Data Loaded"
+    else:
+        history_status  = f"{SUCCESS} {history_data['count']} Historical Data Loaded between {history_data['from']} - {history_data['to']}"
+    
+    return [daily_status, monthly_status, history_status]
 
 def lambda_handler(event=None, context=None):
     
-    has_daily   = False
-    has_monthly = False
-    has_history = False
+    has_daily     = False
+    has_monthly   = False
+    has_history   = False
+    history_data  = {}
+    status        = []
 
     if(test_connection()):
-        print("*"*15,"Connected","*"*15)
-        if (event is not None and isinstance(event, dict) and "history" in event and event['history'] == True):
-            print("Loading Historical Data")
-            load_historical_data()
-            has_history = True
-            print(f"{SUCCESS if(has_history) else ERROR} History Data")
-        else:
-            print("Loading Daily & Monthly Data")
-            daily_data = load_current_data(interval="DAILY")
+      print("*"*15,"Connected","*"*15)
+      if (event is not None and isinstance(event, dict) and "history" in event and event['history'] == True):
+          print("Loading Historical Data")
+          history_data = load_historical_data()
+          has_history = True
+          print(f"{SUCCESS if(has_history) else ERROR} History Data")
+      else:
+          print("Loading Daily & Monthly Data")
+          daily_data = load_current_data(interval="DAILY")
 
-            if(daily_data and daily_data != None and daily_data['ResponseMetadata']['HTTPStatusCode'] == 200):
-                has_daily = True
-                monthly_data = load_current_data(interval="MONTHLY")
-                
-                if(monthly_data and monthly_data != None and monthly_data['ResponseMetadata']['HTTPStatusCode'] == 200):
-                    has_monthly = True
-            
-            print(f"{SUCCESS if(has_daily) else ERROR} Daily Data - {daily_data['MessageId']}")
-            print(f"{SUCCESS if(has_monthly) else ERROR} Monthly Data - {monthly_data['MessageId']}")
-    
-        print("*"*14,"Disconnected","*"*13)
+          if(daily_data and daily_data != None and daily_data['ResponseMetadata']['HTTPStatusCode'] == 200):
+              has_daily = True
+              monthly_data = load_current_data(interval="MONTHLY")
+              
+              if(monthly_data and monthly_data != None and monthly_data['ResponseMetadata']['HTTPStatusCode'] == 200):
+                  has_monthly = True
+          
+          status = process_data_status(has_daily, has_monthly, has_history, daily_data, monthly_data, history_data)
+          print(status[0])
+          print(status[1])
+          print(status[2])
+
+      print("*"*14,"Disconnected","*"*13)
+        
+      return status
 
 # Uncomment the line below for development only
 if __name__ == "__main__":
-    lambda_handler(event={'history':False})
+    temp = lambda_handler(event={'history':False})
+    print(temp)
     #load_current_data()
