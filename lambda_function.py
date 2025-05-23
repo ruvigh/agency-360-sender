@@ -1123,12 +1123,17 @@ def load_historical_data():
     return {"from":start_date.strftime('%d-%m-%Y'), "to":till_date.strftime('%d-%m-%Y'), "loaded":count}
 
 def process_data_status(has_daily, has_monthly, has_history, daily_data, monthly_data, history_data):
-    daily_status    = f"{SUCCESS if(has_daily) else ERROR} Daily Data - {daily_data['MessageId']}"
-    monthly_status  = f"{SUCCESS if(has_monthly) else ERROR} Monthly Data - {monthly_data['MessageId']}"
+    daily_status    = f"{ERROR} No Daily Data"
+    monthly_status  = f"{ERROR} No Monthly Data"
+    history_status  = f"{ERROR} No Historical Data"
+    
+    if(has_daily and daily_data is not None):
+        daily_status    = f"{SUCCESS} Daily Data - {daily_data['MessageId']}"
 
-    if(not has_history and len(history_data) == 0):
-        history_status  = f"{FAIL} No Historical Data Loaded"
-    else:
+    if(has_monthly and monthly_data is not None):
+        monthly_status    = f"{SUCCESS} Monthly Data - {monthly_data['MessageId']}"
+
+    if(has_history and history_data is not None and len(history_data) == 0):
         history_status  = f"{SUCCESS} {history_data['count']} Historical Data Loaded between {history_data['from']} - {history_data['to']}"
     
     return [daily_status, monthly_status, history_status]
@@ -1138,7 +1143,9 @@ def lambda_handler(event=None, context=None):
     has_daily     = False
     has_monthly   = False
     has_history   = False
-    history_data  = {}
+    daily_data    = None
+    monthly_data  = None
+    history_data  = None
     status        = []
 
     if(test_connection()):
@@ -1152,11 +1159,11 @@ def lambda_handler(event=None, context=None):
           print("Loading Daily & Monthly Data")
           daily_data = load_current_data(interval="DAILY")
 
-          if(daily_data and daily_data != None and daily_data['ResponseMetadata']['HTTPStatusCode'] == 200):
+          if(daily_data and daily_data is not None and daily_data['ResponseMetadata']['HTTPStatusCode'] == 200):
               has_daily = True
               monthly_data = load_current_data(interval="MONTHLY")
               
-              if(monthly_data and monthly_data != None and monthly_data['ResponseMetadata']['HTTPStatusCode'] == 200):
+              if(monthly_data and monthly_data is not None and monthly_data['ResponseMetadata']['HTTPStatusCode'] == 200):
                   has_monthly = True
           
           status = process_data_status(has_daily, has_monthly, has_history, daily_data, monthly_data, history_data)
