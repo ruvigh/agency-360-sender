@@ -1126,7 +1126,6 @@ def process_data_status(has_daily, has_monthly, has_history, daily_data, monthly
     daily_status    = f"{SUCCESS if(has_daily) else ERROR} Daily Data - {daily_data['MessageId']}"
     monthly_status  = f"{SUCCESS if(has_monthly) else ERROR} Monthly Data - {monthly_data['MessageId']}"
 
-    print(has_history, history_data, not history_data)
     if(not has_history and len(history_data) == 0):
         history_status  = f"{FAIL} No Historical Data Loaded"
     else:
