@@ -1219,7 +1219,7 @@ Resources:
               Service: lambda.amazonaws.com
             Action: sts:AssumeRole
       Policies:
-        - PolicyName: Obs360AllAccountServicePolicy
+        - PolicyName: Agency360AllAccountServicePolicy
           PolicyDocument:
             Version: '2012-10-17'
             Statement:
